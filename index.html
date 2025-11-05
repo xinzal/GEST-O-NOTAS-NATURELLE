@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gestão de Notas Fiscais NATURELLE</title>
+<style>
+:root {
+  --primary: #003c8f;
+  --accent: #0277bd;
+  --bg: #f4f0f8;
+  --card: #fff;
+  --text: #333;
+}
+
+*{box-sizing:border-box}
+body{
+  font-family:Arial,Helvetica,sans-serif;
+  background-color:var(--bg);
+  margin:0;
+  color:var(--text);
+  overflow-x:hidden;
+}
+
+/* Fundo animado */
+#bgCanvas{
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  z-index:-1;
+}
+
+/* Cabeçalho e navegação */
+header{
+  background-color:var(--primary);
+  color:#fff;
+  padding:20px;
+  text-align:center;
+  font-size:24px;
+  font-weight:700;
+  border-bottom:4px solid rgba(0,0,0,0.03);
+}
+nav{
+  display:flex;
+  justify-content:center;
+  margin:20px 0;
+  gap:12px;
+  flex-wrap:wrap;
+  padding:0 12px;
+}
+nav button{
+  padding:10px 18px;
+  font-size:15px;
+  border:0;
+  border-radius:8px;
+  cursor:pointer;
+  background-color:var(--accent);
+  color:#fff;
+  transition:transform .12s ease;
+}
+nav button.active,
+nav button:hover{
+  background-color:var(--primary);
+  transform:translateY(-1px);
+}
+
+section{
+  display:none;
+  max-width:1200px;
+  margin:12px auto;
+  padding:18px;
+  background:var(--card);
+  border-radius:10px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.06);
+  overflow:auto;
+}
+section.active{display:block}
+
+/* Tabela */
+table{width:100%;border-collapse:collapse;margin-top:18px;font-size:14px;min-width:900px}
+th,td{border:1px solid #e6dff1;padding:10px;text-align:center;vertical-align:middle}
+th{background:var(--primary);color:#fff;font-weight:600}
+tr:nth-child(even){background:#fbf6fd}
+tr:hover{background:#f0e0fb}
+
+/* Observação */
+.obs-bubble{
+  display:none;
+  position:fixed;
+  background:#fff;
+  border:1px solid #ddd;
+  padding:10px;
+  border-radius:8px;
+  width:260px;
+  box-shadow:0 10px 28px rgba(0,0,0,0.12);
+  z-index:1200;
+  animation:fadeIn .18s ease;
+}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.obs-bubble textarea{width:100%;height:80px;margin-bottom:8px}
+.obs-button-wrapper{position:relative;display:inline-block}
+.obs-indicator{position:absolute;top:-4px;right:-6px;width:10px;height:10px;background:purple;border-radius:50%;display:none}
+.obs-button-wrapper.has-text .obs-indicator{display:block}
+
+/* Feedback */
+#feedback{
+  position:fixed;
+  top:18px;
+  right:18px;
+  background:var(--primary);
+  color:#fff;
+  padding:10px 14px;
+  border-radius:8px;
+  display:none;
+  box-shadow:0 10px 28px rgba(0,0,0,0.14);
+  z-index:1300;
+}
+
+/* Paginação */
+#paginationBar{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap}
+.page-controls{display:flex;align-items:center;gap:8px}
+.page-controls button{padding:6px 10px;border-radius:6px;border:0;background:var(--primary);color:#fff;cursor:pointer}
+.page-controls button:disabled{background:#ddd;color:#666;cursor:not-allowed}
+.page-numbers{display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:60%}
+.page-numbers button{padding:6px 10px;border-radius:6px;border:0;background:#eee;cursor:pointer}
+.page-numbers button.active{background:var(--primary);color:#fff;font-weight:600}
+#rowsPerPage{padding:6px;border-radius:6px}
+@media (max-width:900px){table{font-size:13px;min-width:720px}.page-numbers{max-width:100%;overflow:auto}}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<header>Gestão de Notas Fiscais NATURELLE</header>
+
+<nav>
+  <button id="btnView" class="active">Visualizar NFs</button>
+</nav>
+
+<section id="viewSection" class="active">
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+    <div style="flex:2; min-width:220px;">
+      <label for="searchInput">Pesquisar:</label>
+      <input type="text" id="searchInput" placeholder="Pesquise razão, NF..." oninput="aplicarFiltroPesquisa()">
+    </div>
+    <div style="min-width:220px;">
+      <label>&nbsp;</label>
+      <button onclick="carregarNFs()">Atualizar</button>
+    </div>
+  </div>
+
+  <table id="nfTable" aria-live="polite">
+    <thead>
+      <tr>
+        <th>Data/Hora</th>
+        <th>Razão Social</th>
+        <th>Nº NF Venda</th>
+        <th>Nº NF Remessa</th>
+        <th>Nº NF Cobertura</th>
+        <th>Fábrica</th>
+        <th>PDF</th>
+        <th>Observação</th>
+      </tr>
+    </thead>
+    <tbody><tr><td colspan="8" style="text-align:center;">Carregando...</td></tr></tbody>
+  </table>
+
+  <div id="paginationBar">
+    <div class="page-controls">
+      <button id="firstPageBtn" onclick="goToPage(1)">⟪ Primeiro</button>
+      <button id="prevBtn" onclick="changePage(-1)">⟨ Voltar</button>
+    </div>
+    <div class="page-numbers" id="pageNumbers"></div>
+    <div class="page-controls">
+      <button id="nextBtn" onclick="changePage(1)">Avançar ⟩</button>
+      <button id="lastPageBtn" onclick="goToLastPage()">Último ⟫</button>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <div>
+        Mostrar
+        <select id="rowsPerPage" onchange="changeRowsPerPage()">
+          <option value="10">10</option>
+          <option value="30">30</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        por página
+      </div>
+      <div id="showingInfo" style="white-space:nowrap; font-size:13px; color:#333;"></div>
+    </div>
+  </div>
+</section>
+
+<div id="obsBubble" class="obs-bubble" role="dialog" aria-modal="true">
+  <textarea id="obsText" placeholder="Escreva a observação..."></textarea>
+  <div style="text-align:right;">
+    <button onclick="salvarObs()">Salvar</button>
+    <button onclick="fecharObs()">Fechar</button>
+  </div>
+</div>
+
+<div id="feedback">Operação realizada com sucesso!</div>
+
+<script>
+/* Fundo animado */
+const canvas=document.getElementById('bgCanvas');
+const ctx=canvas.getContext('2d');
+canvas.width=window.innerWidth;
+canvas.height=window.innerHeight;
+
+class Particle{
+  constructor(){
+    this.x=Math.random()*canvas.width;
+    this.y=Math.random()*canvas.height;
+    this.radius=Math.random()*2+1;
+    this.dx=(Math.random()-0.5)*1;
+    this.dy=(Math.random()-0.5)*1;
+    this.color=`rgba(41,182,246,${Math.random()*0.4+0.1})`;
+  }
+  draw(){ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fillStyle=this.color;ctx.fill();}
+  update(particles){
+    this.x+=this.dx;this.y+=this.dy;
+    if(this.x<0||this.x>canvas.width)this.dx*=-1;
+    if(this.y<0||this.y>canvas.height)this.dy*=-1;
+    particles.forEach(p=>{
+      const dist=Math.hypot(this.x-p.x,this.y-p.y);
+      if(dist<100){
+        ctx.beginPath();
+        ctx.strokeStyle=`rgba(33,150,243,${0.15-dist/800})`;
+        ctx.moveTo(this.x,this.y);
+        ctx.lineTo(p.x,p.y);
+        ctx.stroke();
+      }
+    });
+    this.draw();
+  }
+}
+
+const particles=[];
+for(let i=0;i<100;i++)particles.push(new Particle());
+function animate(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  particles.forEach(p=>p.update(particles));
+  requestAnimationFrame(animate);
+}
+animate();
+window.addEventListener('resize',()=>{
+  canvas.width=window.innerWidth;
+  canvas.height=window.innerHeight;
+});
+
+/* === Funções principais === */
+const webAppURL="https://script.google.com/macros/s/AKfycbyPdj_FtFywyV4Ey4b3-Q6YV3RcgXzsEUux6ceK23cdJTh71paHQ9HMD5Ts-pFOomUX/exec";
+let allData=[],workingData=[];
+let currentPage=1,rowsPerPage=10,obsId=null;
+
+const refs={
+  nfTableBody:document.querySelector('#nfTable tbody'),
+  pageNumbers:document.getElementById('pageNumbers'),
+  prevBtn:document.getElementById('prevBtn'),
+  nextBtn:document.getElementById('nextBtn'),
+  firstPageBtn:document.getElementById('firstPageBtn'),
+  lastPageBtn:document.getElementById('lastPageBtn'),
+  showingInfo:document.getElementById('showingInfo'),
+  feedback:document.getElementById('feedback'),
+  obsBubble:document.getElementById('obsBubble'),
+  obsText:document.getElementById('obsText'),
+  searchInput:document.getElementById('searchInput')
+};
+
+async function carregarNFs(){
+  try{
+    const res=await fetch(webAppURL+'?action=get');
+    allData=await res.json();
+    allData=allData.filter(x=>x.fabrica==="NATURELLE");
+    allData.sort((a,b)=>new Date(b.dataHora||0)-new Date(a.dataHora||0));
+    aplicarFiltroPesquisa();
+  }catch(err){console.error(err);allData=[];aplicarFiltroPesquisa();}
+}
+
+function aplicarFiltroPesquisa(){
+  const termo=(refs.searchInput.value||'').toLowerCase().trim();
+  workingData=allData.filter(r=>{
+    const combined=(String(r.razao||'')+'|'+String(r.nfVenda||'')+'|'+String(r.nfRemessa||'')).toLowerCase();
+    return combined.includes(termo);
+  });
+  currentPage=1;renderTabela();
+}
+
+function renderTabela(){
+  const tbody=refs.nfTableBody;
+  rowsPerPage=parseInt(document.getElementById('rowsPerPage').value,10)||10;
+  const totalItems=workingData.length;
+  const totalPages=Math.max(1,Math.ceil(totalItems/rowsPerPage));
+  if(currentPage>totalPages)currentPage=totalPages;
+  const start=(currentPage-1)*rowsPerPage;
+  const end=Math.min(totalItems,start+rowsPerPage);
+  const pageData=workingData.slice(start,end);
+  const frag=document.createDocumentFragment();
+
+  if(pageData.length===0){
+    const tr=document.createElement('tr');
+    const td=document.createElement('td');
+    td.colSpan=8;td.style.textAlign='center';td.textContent='Nenhuma NF encontrada.';
+    tr.appendChild(td);frag.appendChild(tr);
+  }else{
+    for(const r of pageData){
+      const hasObs=String(r.observacao||'').trim()!=='';
+      const tr=document.createElement('tr');
+      const fields=['dataHora','razao','nfVenda','nfRemessa','nfCobertura','fabrica'];
+      for(const f of fields){
+        const td=document.createElement('td');
+        td.textContent=f==='dataHora'?new Date(r[f]).toLocaleString():(r[f]||'');
+        tr.appendChild(td);
+      }
+      const tdPdf=document.createElement('td');
+      tdPdf.innerHTML=r.pdfLink?`<a href="${r.pdfLink}" target="_blank">Abrir PDF</a>`:'—';
+      tr.appendChild(tdPdf);
+
+      const tdObs=document.createElement('td');
+      const wrap=document.createElement('div');
+      wrap.className='obs-button-wrapper'+(hasObs?' has-text':'');
+      wrap.title=(r.observacao||'').split('\n')[0]||'';
+      const btn=document.createElement('button');
+      btn.textContent='💬';
+      btn.onclick=function(){abrirObs(r.id,this)};
+      const span=document.createElement('span');
+      span.className='obs-indicator';
+      wrap.appendChild(btn);wrap.appendChild(span);
+      tdObs.appendChild(wrap);
+      tr.appendChild(tdObs);
+      frag.appendChild(tr);
+    }
+  }
+  tbody.innerHTML='';tbody.appendChild(frag);
+  updatePaginationUI(totalItems,totalPages,start+1,end);
+}
+
+function updatePaginationUI(totalItems,totalPages,start,end){
+  refs.pageNumbers.innerHTML='';
+  const maxButtons=7;
+  let s=Math.max(1,currentPage-Math.floor(maxButtons/2));
+  let e=s+maxButtons-1;
+  if(e>totalPages){e=totalPages;s=Math.max(1,e-maxButtons+1);}
+  for(let p=s;p<=e;p++){
+    const b=document.createElement('button');
+    b.textContent=p;
+    if(p===currentPage)b.classList.add('active');
+    b.onclick=()=>goToPage(p);
+    refs.pageNumbers.appendChild(b);
+  }
+  refs.prevBtn.disabled=currentPage<=1;
+  refs.nextBtn.disabled=currentPage>=totalPages;
+  refs.firstPageBtn.disabled=currentPage<=1;
+  refs.lastPageBtn.disabled=currentPage>=totalPages;
+  refs.showingInfo.innerText=`Mostrando ${start}–${Math.min(totalItems,end)} de ${totalItems}`;
+}
+
+function changePage(d){const tp=Math.max(1,Math.ceil(workingData.length/rowsPerPage));currentPage=Math.min(tp,Math.max(1,currentPage+d));renderTabela();}
+function goToPage(n){const tp=Math.max(1,Math.ceil(workingData.length/rowsPerPage));currentPage=Math.min(tp,Math.max(1,n));renderTabela();}
+function goToLastPage(){const tp=Math.max(1,Math.ceil(workingData.length/rowsPerPage));currentPage=tp;renderTabela();}
+function changeRowsPerPage(){rowsPerPage=parseInt(document.getElementById('rowsPerPage').value,10);currentPage=1;renderTabela();}
+
+/* === BALÃO AJUSTADO === */
+function abrirObs(id,btn){
+  obsId=id;
+  const nf=allData.find(x=>x.id===id)||{};
+  refs.obsText.value=nf.observacao||'';
+  const bubble=refs.obsBubble;
+  bubble.style.display='block';
+
+  const rect=btn.getBoundingClientRect();
+  let left=rect.left+window.scrollX;
+  let top=rect.bottom+window.scrollY+8;
+
+  const bubbleW=bubble.offsetWidth;
+  const bubbleH=bubble.offsetHeight;
+  const screenW=window.innerWidth;
+  const screenH=window.innerHeight;
+
+  // Impede sair para direita
+  if(left+bubbleW>screenW-10) left=screenW-bubbleW-10;
+  // Impede sair para baixo
+  if(top+bubbleH>screenH-10) top=rect.top+window.scrollY-bubbleH-10;
+  // Impede sair para esquerda
+  if(left<10) left=10;
+  // Impede sair para cima
+  if(top<10) top=10;
+
+  bubble.style.left=left+'px';
+  bubble.style.top=top+'px';
+}
+
+function fecharObs(){refs.obsBubble.style.display='none';}
+async function salvarObs(){
+  if(!obsId)return fecharObs();
+  const texto=refs.obsText.value;
+  try{
+    await fetch(`${webAppURL}?action=update&id=${obsId}&observacao=${encodeURIComponent(texto)}`);
+    fecharObs();mostrarFeedback('Observação salva!');carregarNFs();
+  }catch(e){alert('Erro ao salvar observação');}
+}
+function mostrarFeedback(msg){
+  refs.feedback.textContent=msg;
+  refs.feedback.style.display='block';
+  setTimeout(()=>refs.feedback.style.display='none',2000);
+}
+carregarNFs();
+</script>
+</body>
+</html>
